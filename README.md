@@ -2,7 +2,7 @@
 
 **A sandboxed Google Tag Manager template for the StackAdapt Universal Pixel: retargeting page views and conversion tracking, without Custom HTML.**
 
-[![Maintained by New North Digital](https://img.shields.io/badge/Maintained%20by-New%20North%20Digital-455CE9)](https://newnorth.nl/?utm_source=github&utm_medium=gtm-template&utm_campaign=stackadapt-web-tag)
+[![Created by Freek Kampen](https://img.shields.io/badge/Created%20by-Freek%20Kampen-455CE9)](https://freekkampen.com) [![Maintained by New North Digital](https://img.shields.io/badge/Maintained%20by-New%20North%20Digital-455CE9)](https://newnorth.nl/?utm_source=github&utm_medium=gtm-template&utm_campaign=stackadapt-web-tag)
 
 ## Features
 
@@ -37,4 +37,4 @@ StackAdapt's only published GTM artifact is a server-side template. For web cont
 
 ---
 
-Maintained by [New North Digital](https://newnorth.nl/?utm_source=github&utm_medium=gtm-template&utm_campaign=stackadapt-web-tag).
+Created and maintained by [Freek Kampen](https://freekkampen.com) at [New North Digital](https://newnorth.nl/?utm_source=github&utm_medium=gtm-template&utm_campaign=stackadapt-web-tag).
