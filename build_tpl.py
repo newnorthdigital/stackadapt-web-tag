@@ -18,7 +18,7 @@ ___INFO___
   "id": "cvt_temp_public_id",
   "version": 1,
   "securityGroups": [],
-  "displayName": "StackAdapt Conversion Tracking by New North Digital",
+  "displayName": "StackAdapt Pixel by New North",
   "categories": [
     "ADVERTISING",
     "CONVERSIONS",
