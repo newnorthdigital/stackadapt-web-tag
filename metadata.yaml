@@ -1,5 +1,5 @@
 homepage: "https://www.stackadapt.com"
 documentation: "https://github.com/newnorthdigital/stackadapt-web-tag/blob/main/README.md"
 versions:
-  - sha: 0561b4593e6f301b02a0956f260d131e2987cd7b
+  - sha: 6866eb280940562dee10ba92849a66e9a22747e9
     changeNotes: "Initial release. Page-view (ts) and conversion (conv) modes via the saq command queue, revenue/order ID/currency, custom parameters, and script injection scoped to tags.srv.stackadapt.com."
