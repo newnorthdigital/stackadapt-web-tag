@@ -1,6 +1,8 @@
 homepage: "https://www.stackadapt.com"
 documentation: "https://github.com/newnorthdigital/stackadapt-web-tag/blob/main/README.md"
 versions:
+  - sha: d75adf6d860e38b3bcad2ba3ca92b1bfdf7fa369
+    changeNotes: 'Canonical GTM Editor export (validated in GTM, tests pass).'
   - sha: 0056ace1e97248aec98dc8531111bbf63f281675
     changeNotes: 'NND-badge icon and shortened display name (by New North).'
   - sha: a26ba8b6f425fcfbca672687e7e9faf867b48959
