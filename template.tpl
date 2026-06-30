@@ -326,7 +326,7 @@ ___WEB_PERMISSIONS___
 ___TESTS___
 
 scenarios:
-- name: Page view - queues ts and injects events.js
+- name: Page view - queues ts and injects the loader
   code: |-
     const mockData = {
       actionType: 'pageview',
