@@ -1,5 +1,7 @@
 homepage: "https://www.stackadapt.com"
 documentation: "https://github.com/newnorthdigital/stackadapt-web-tag/blob/main/README.md"
 versions:
+  - sha: 0056ace1e97248aec98dc8531111bbf63f281675
+    changeNotes: 'NND-badge icon and shortened display name (by New North).'
   - sha: a26ba8b6f425fcfbca672687e7e9faf867b48959
     changeNotes: "Initial release. Page-view (ts) and conversion (conv) modes via the saq command queue, revenue/order ID/currency, custom parameters, and script injection scoped to tags.srv.stackadapt.com."
