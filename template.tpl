@@ -62,8 +62,35 @@ ___TEMPLATE_PARAMETERS___
         "type": "NON_EMPTY"
       }
     ],
-    "help": "Your StackAdapt Universal Pixel ID, or the Conversion Event Unique ID for a conversion. A 22-character ID, e.g. PEpR18E5FJGoHB24wvWU6A. You can also reference a GTM variable here.",
-    "alwaysInSummary": true
+    "help": "Your StackAdapt Universal Pixel ID. A 22-character ID, e.g. PEpR18E5FJGoHB24wvWU6A. You can also reference a GTM variable here.",
+    "alwaysInSummary": true,
+    "enablingConditions": [
+      {
+        "paramName": "actionType",
+        "paramValue": "pageview",
+        "type": "EQUALS"
+      }
+    ]
+  },
+  {
+    "type": "TEXT",
+    "name": "conversionId",
+    "displayName": "Conversion ID",
+    "simpleValueType": true,
+    "valueValidators": [
+      {
+        "type": "NON_EMPTY"
+      }
+    ],
+    "help": "Your StackAdapt Conversion Event Unique ID. A 22-character ID, e.g. NVzOKkqz7PghcmmSeXTHWq. You can also reference a GTM variable here.",
+    "alwaysInSummary": true,
+    "enablingConditions": [
+      {
+        "paramName": "actionType",
+        "paramValue": "conversion",
+        "type": "EQUALS"
+      }
+    ]
   },
   {
     "type": "TEXT",
@@ -142,6 +169,33 @@ ___TEMPLATE_PARAMETERS___
   },
   {
     "type": "GROUP",
+    "name": "consentGroup",
+    "displayName": "Consent",
+    "groupStyle": "ZIPPY_OPEN",
+    "subParams": [
+      {
+        "type": "SELECT",
+        "name": "consentMode",
+        "displayName": "Consent handling",
+        "macrosInSelect": false,
+        "selectItems": [
+          {
+            "value": "auto",
+            "displayValue": "Follow GTM Consent Mode (ad_storage + ad_user_data)"
+          },
+          {
+            "value": "off",
+            "displayValue": "Fire immediately (I gate consent elsewhere)"
+          }
+        ],
+        "simpleValueType": true,
+        "defaultValue": "auto",
+        "help": "\"Follow GTM Consent Mode\" (recommended) fires the pixel only once ad_storage and ad_user_data are granted, and waits for consent if it is not yet given. \"Fire immediately\" runs the pixel right away, for when you gate consent with GTM's tag-level consent settings or a consent trigger. Consent that is never configured counts as granted, so sites without Consent Mode are unaffected."
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
     "name": "debugGroup",
     "displayName": "Debugging",
     "groupStyle": "ZIPPY_CLOSED",
@@ -164,6 +218,8 @@ const injectScript = require('injectScript');
 const createArgumentsQueue = require('createArgumentsQueue');
 const makeTableMap = require('makeTableMap');
 const makeString = require('makeString');
+const isConsentGranted = require('isConsentGranted');
+const addConsentListener = require('addConsentListener');
 
 const FN = 'saq';
 const LOADER = 'https://tags.srv.stackadapt.com/events.js';
@@ -179,43 +235,78 @@ const debugLog = (msg) => {
 
 debugLog('Starting with event type: ' + actionType);
 
-const pixelId = data.pixelId;
+const pixelId = actionType === 'conversion' ? data.conversionId : data.pixelId;
 if (!pixelId) {
-  debugLog('Error: Pixel ID is required');
+  debugLog('Error: pixel/conversion ID is required');
   data.gtmOnFailure();
   return;
 }
 
-// Build the saq command queue, mirroring the native StackAdapt snippet
-// (a global saq() that pushes its arguments onto saq.queue until events.js
-// loads and drains it). createArgumentsQueue is safe to call on every fire.
-const saq = createArgumentsQueue(FN, FN + '.queue');
+// Queue the pixel call and load events.js. Guarded so it runs at most once,
+// even if both consent listeners fire after consent is granted.
+let hasFired = false;
+const fire = () => {
+  if (hasFired) {
+    return;
+  }
+  hasFired = true;
 
-if (actionType === 'pageview') {
-  saq('ts', makeString(pixelId));
-  debugLog('Queued ts for ' + pixelId);
-} else if (actionType === 'conversion') {
-  const conv = (data.customParams && data.customParams.length > 0) ?
-    (makeTableMap(data.customParams, 'key', 'value') || {}) : {};
-  if (data.revenue) {
-    conv.revenue = makeString(data.revenue);
+  // Build the saq command queue, mirroring the native StackAdapt snippet
+  // (a global saq() that pushes its arguments onto saq.queue until events.js
+  // loads and drains it). createArgumentsQueue is safe to call on every fire.
+  const saq = createArgumentsQueue(FN, FN + '.queue');
+
+  if (actionType === 'pageview') {
+    saq('ts', makeString(pixelId));
+    debugLog('Queued ts for ' + pixelId);
+  } else if (actionType === 'conversion') {
+    const conv = (data.customParams && data.customParams.length > 0) ?
+      (makeTableMap(data.customParams, 'key', 'value') || {}) : {};
+    if (data.revenue) {
+      conv.revenue = makeString(data.revenue);
+    }
+    if (data.orderId) {
+      conv.order_id = makeString(data.orderId);
+    }
+    if (data.currency) {
+      conv.currency = data.currency;
+    }
+    saq('conv', makeString(pixelId), conv);
+    debugLog('Queued conv for ' + pixelId);
+  } else {
+    debugLog('Unknown event type: ' + actionType);
+    data.gtmOnFailure();
+    return;
   }
-  if (data.orderId) {
-    conv.order_id = makeString(data.orderId);
-  }
-  if (data.currency) {
-    conv.currency = data.currency;
-  }
-  saq('conv', makeString(pixelId), conv);
-  debugLog('Queued conv for ' + pixelId);
+
+  // Load events.js once per page (cache token keeps it from re-injecting per event).
+  injectScript(LOADER, data.gtmOnSuccess, data.gtmOnFailure, 'stackadapt');
+};
+
+// Consent gate. StackAdapt retargeting and conversions rely on ad_storage and
+// ad_user_data. In the default "auto" mode the tag follows GTM Consent Mode:
+// it fires once both are granted and waits (via consent listeners) if they are
+// not yet. Choose "Fire immediately" to gate consent at the container level
+// instead. Note: isConsentGranted returns true when consent is not configured,
+// so sites without Consent Mode keep firing as before.
+const consentMode = data.consentMode || 'auto';
+const adConsentGranted = () => isConsentGranted('ad_storage') && isConsentGranted('ad_user_data');
+
+if (consentMode === 'off' || adConsentGranted()) {
+  fire();
 } else {
-  debugLog('Unknown event type: ' + actionType);
-  data.gtmOnFailure();
-  return;
+  debugLog('Waiting for ad_storage and ad_user_data consent');
+  addConsentListener('ad_storage', () => {
+    if (adConsentGranted()) {
+      fire();
+    }
+  });
+  addConsentListener('ad_user_data', () => {
+    if (adConsentGranted()) {
+      fire();
+    }
+  });
 }
-
-// Load events.js once per page (cache token keeps it from re-injecting per event).
-injectScript(LOADER, data.gtmOnSuccess, data.gtmOnFailure, 'stackadapt');
 
 
 ___WEB_PERMISSIONS___
@@ -367,6 +458,89 @@ ___WEB_PERMISSIONS___
       "isEditedByUser": true
     },
     "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "access_consent"
+      },
+      "param": [
+        {
+          "key": "consentTypes",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ad_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ad_user_data"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
   }
 ]
 
@@ -379,6 +553,7 @@ scenarios:
     const mockData = {
       actionType: 'pageview',
       pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'off',
       debug: false
     };
 
@@ -396,6 +571,7 @@ scenarios:
     const mockData = {
       actionType: 'pageview',
       pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'off',
       debug: false
     };
 
@@ -413,10 +589,11 @@ scenarios:
   code: |-
     const mockData = {
       actionType: 'conversion',
-      pixelId: 'NVzOKkqz7PghcmmSeXTHWq',
+      conversionId: 'NVzOKkqz7PghcmmSeXTHWq',
       revenue: '100.00',
       orderId: 'T12345',
       currency: 'EUR',
+      consentMode: 'off',
       debug: false
     };
 
@@ -432,11 +609,12 @@ scenarios:
   code: |-
     const mockData = {
       actionType: 'conversion',
-      pixelId: 'NVzOKkqz7PghcmmSeXTHWq',
+      conversionId: 'NVzOKkqz7PghcmmSeXTHWq',
       customParams: [
         {key: 'product_id', value: 'SKU-1'},
         {key: 'action', value: 'purchase'}
       ],
+      consentMode: 'off',
       debug: false
     };
 
@@ -463,6 +641,7 @@ scenarios:
     const mockData = {
       actionType: 'pageview',
       pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'off',
       debug: false
     };
 
@@ -473,6 +652,88 @@ scenarios:
     runCode(mockData);
 
     assertApi('gtmOnFailure').wasCalled();
+- name: Consent - auto mode fires when ad consent is already granted
+  code: |-
+    const mockData = {
+      actionType: 'pageview',
+      pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'auto',
+      debug: false
+    };
+
+    mock('isConsentGranted', function(type) { return true; });
+    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
+      onSuccess();
+    });
+
+    runCode(mockData);
+
+    assertApi('injectScript').wasCalled();
+    assertApi('addConsentListener').wasNotCalled();
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Consent - auto mode waits when ad consent is denied
+  code: |-
+    const mockData = {
+      actionType: 'pageview',
+      pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'auto',
+      debug: false
+    };
+
+    mock('isConsentGranted', function(type) { return false; });
+    mock('addConsentListener', function(type, callback) {});
+    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
+      onSuccess();
+    });
+
+    runCode(mockData);
+
+    assertApi('addConsentListener').wasCalled();
+    assertApi('injectScript').wasNotCalled();
+- name: Consent - fires once after consent is granted via the listener
+  code: |-
+    const mockData = {
+      actionType: 'pageview',
+      pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'auto',
+      debug: false
+    };
+
+    let granted = false;
+    mock('isConsentGranted', function(type) { return granted; });
+    mock('addConsentListener', function(type, callback) {
+      granted = true;
+      callback(type, true);
+    });
+    let injectCount = 0;
+    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
+      injectCount++;
+      onSuccess();
+    });
+
+    runCode(mockData);
+
+    assertThat(injectCount).isEqualTo(1);
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Consent - fire immediately skips the consent check
+  code: |-
+    const mockData = {
+      actionType: 'pageview',
+      pixelId: 'PEpR18E5FJGoHB24wvWU6A',
+      consentMode: 'off',
+      debug: false
+    };
+
+    mock('isConsentGranted', function(type) { return false; });
+    mock('injectScript', function(url, onSuccess, onFailure, cacheToken) {
+      onSuccess();
+    });
+
+    runCode(mockData);
+
+    assertApi('injectScript').wasCalled();
+    assertApi('addConsentListener').wasNotCalled();
+    assertApi('gtmOnSuccess').wasCalled();
 
 
 ___NOTES___
