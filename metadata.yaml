@@ -1,6 +1,8 @@
 homepage: "https://www.stackadapt.com"
 documentation: "https://github.com/newnorthdigital/stackadapt-web-tag/blob/main/README.md"
 versions:
+  - sha: 52f8f7664bf7dedb1aa450ce6cb0b2a96dc92d4e
+    changeNotes: 'Add Conversion ID field for conversion mode and built-in Consent Mode gate (ad_storage + ad_user_data), with a Fire-immediately option.'
   - sha: d75adf6d860e38b3bcad2ba3ca92b1bfdf7fa369
     changeNotes: 'Canonical GTM Editor export (validated in GTM, tests pass).'
   - sha: 0056ace1e97248aec98dc8531111bbf63f281675
